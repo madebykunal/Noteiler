@@ -1,0 +1,113 @@
+:root {
+  --bg-page: #191919;
+  --bg-nav: #222222;
+  --border-nav: #2c2c2c;
+  --bg-dropdown: #242424;
+  --bg-dropdown-hover: #2e2e2e;
+  
+  --text-main: #e2e2e2;
+  --text-secondary: #999999;
+  --text-muted: #666666;
+
+  --caret-cyan: #00d2ff;
+  --selection-bg: rgba(0, 210, 255, 0.2);
+
+  --font-sans: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', SFMono-Regular, monospace;
+
+  --nav-height: 42px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --transition-fast: 120ms ease;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-page);
+}
+
+::selection {
+  background-color: var(--selection-bg);
+  color: #ffffff;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+button {
+  font-family: inherit;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+textarea {
+  font-family: inherit;
+  background: none;
+  border: none;
+  color: inherit;
+  outline: none;
+}
+
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+  }
+  
+  .app-header,
+  .toast-container {
+    display: none !important;
+  }
+
+  .editor-container {
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .writing-textarea {
+    color: #111827 !important;
+    font-size: 14pt !important;
+    line-height: 1.6 !important;
+  }
+}
