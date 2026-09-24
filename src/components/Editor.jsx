@@ -50,6 +50,52 @@ function getRangeForOffsets(root, start, end) {
   return null;
 }
 
+function getCharOffsetFromPoint(editorEl, x, y) {
+  let node = null;
+  let offset = 0;
+
+  if (document.caretRangeFromPoint) {
+    const range = document.caretRangeFromPoint(x, y);
+    if (range) {
+      node = range.startContainer;
+      offset = range.startOffset;
+    }
+  } else if (document.caretPositionFromPoint) {
+    const pos = document.caretPositionFromPoint(x, y);
+    if (pos) {
+      node = pos.offsetNode;
+      offset = pos.offset;
+    }
+  }
+
+  if (!node || !editorEl.contains(node)) return -1;
+
+  let currentOffset = 0;
+  let found = false;
+
+  function walk(n) {
+    if (found) return true;
+    if (n === node) {
+      currentOffset += offset;
+      found = true;
+      return true;
+    }
+    if (n.nodeType === Node.TEXT_NODE) {
+      currentOffset += n.nodeValue.length;
+    } else if (n.nodeName === 'BR') {
+      currentOffset += 1;
+    } else {
+      for (let i = 0; i < n.childNodes.length; i++) {
+        if (walk(n.childNodes[i])) return true;
+      }
+    }
+    return false;
+  }
+
+  walk(editorEl);
+  return found ? currentOffset : -1;
+}
+
 export default function Editor({
   docId,
   title = '',
@@ -58,7 +104,8 @@ export default function Editor({
   onChange,
   onSelectionChange,
   harperIssues = [],
-  onApplyHarperSuggestion
+  onApplyHarperSuggestion,
+  isSidebarOpen = false
 }) {
   const editorRef = useRef(null);
   const containerRef = useRef(null);
@@ -247,6 +294,24 @@ export default function Editor({
   }, [computeMarkers, content]);
 
   useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver(() => {
+      computeMarkers();
+      triggerCaretUpdate('type');
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [computeMarkers, triggerCaretUpdate]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      computeMarkers();
+      triggerCaretUpdate('big');
+    }, 240);
+    return () => clearTimeout(timer);
+  }, [isSidebarOpen, computeMarkers, triggerCaretUpdate]);
+
+  useEffect(() => {
     return () => {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
@@ -309,7 +374,7 @@ export default function Editor({
   }, [triggerCaretUpdate, computeMarkers]);
 
   const handleMouseMove = (e) => {
-    if (!markers.length) {
+    if (!harperIssues || harperIssues.length === 0 || !editorRef.current || !containerRef.current) {
       if (hoveredData && !isOverTooltipRef.current) {
         setHoveredData(null);
       }
@@ -319,24 +384,45 @@ export default function Editor({
     const mouseX = e.clientX;
     const mouseY = e.clientY;
 
-    const hit = markers.find(
-      (m) =>
-        mouseX >= m.viewportRect.left - 2 &&
-        mouseX <= m.viewportRect.right + 2 &&
-        mouseY >= m.viewportRect.top - 2 &&
-        mouseY <= m.viewportRect.bottom + 6
-    );
+    let targetIssue = null;
+    let targetRange = null;
 
-    if (hit) {
+    const charIndex = getCharOffsetFromPoint(editorRef.current, mouseX, mouseY);
+    if (charIndex >= 0) {
+      targetIssue = harperIssues.find((issue) => charIndex >= issue.start && charIndex <= issue.end);
+      if (targetIssue) {
+        targetRange = getRangeForOffsets(editorRef.current, targetIssue.start, targetIssue.end);
+      }
+    }
+
+    if (!targetIssue && markers.length > 0) {
+      const hit = markers.find(
+        (m) =>
+          mouseX >= m.viewportRect.left - 4 &&
+          mouseX <= m.viewportRect.right + 4 &&
+          mouseY >= m.viewportRect.top - 4 &&
+          mouseY <= m.viewportRect.bottom + 6
+      );
+      if (hit) {
+        targetIssue = hit.issue;
+        targetRange = getRangeForOffsets(editorRef.current, hit.issue.start, hit.issue.end);
+      }
+    }
+
+    if (targetIssue && targetRange) {
       if (hoverTimeoutRef.current) {
         clearTimeout(hoverTimeoutRef.current);
         hoverTimeoutRef.current = null;
       }
+
+      const rect = targetRange.getBoundingClientRect();
+      const containerRect = containerRef.current.getBoundingClientRect();
+
       setHoveredData({
-        issue: hit.issue,
-        x: hit.x,
-        y: hit.y + hit.height,
-        width: hit.width
+        issue: targetIssue,
+        x: Math.max(10, rect.left - containerRect.left),
+        y: rect.bottom - containerRect.top + 3,
+        width: rect.width
       });
     } else if (!isOverTooltipRef.current) {
       if (!hoverTimeoutRef.current) {
@@ -472,7 +558,7 @@ export default function Editor({
           className="harper-word-tooltip"
           style={{
             left: `${hoveredData.x}px`,
-            top: `${hoveredData.y + 4}px`
+            top: `${hoveredData.y}px`
           }}
           onMouseEnter={() => {
             isOverTooltipRef.current = true;

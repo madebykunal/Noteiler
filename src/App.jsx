@@ -316,6 +316,7 @@ export default function App() {
               onSelectionChange={setSelectedWords}
               harperIssues={harperIssues}
               onApplyHarperSuggestion={handleApplyHarperSuggestion}
+              isSidebarOpen={isSidebarOpen}
             />
           </section>
         </main>
