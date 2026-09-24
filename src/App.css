@@ -81,6 +81,12 @@
   letter-spacing: -0.01em;
 }
 
+@media (max-width: 768px) {
+  .header-selected-count {
+    display: none !important;
+  }
+}
+
 .header-word-count {
   font-family: var(--font-mono);
   font-size: 13px;
