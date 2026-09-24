@@ -23,11 +23,19 @@ export async function lintText(text) {
     const results = [];
     for (const lint of rawLints) {
       const span = lint.span();
-      const suggestions = lint.suggestions().map((s) => s.get_replacement_text());
+      const rawSuggestions = lint.suggestions();
+      const suggestions = rawSuggestions.map((s) => {
+        const rep = s.get_replacement_text();
+        s.free();
+        return rep;
+      });
+      const start = span.start;
+      const end = span.end;
+      span.free();
       results.push({
-        id: `${span.start}-${span.end}-${lint.get_problem_text()}`,
-        start: span.start,
-        end: span.end,
+        id: `${start}-${end}-${lint.get_problem_text()}`,
+        start,
+        end,
         problemText: lint.get_problem_text(),
         message: lint.message(),
         kind: lint.lint_kind_pretty(),

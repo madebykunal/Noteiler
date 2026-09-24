@@ -293,23 +293,33 @@ export default function Editor({
     computeMarkers();
   }, [computeMarkers, content]);
 
+  const computeMarkersRef = useRef(computeMarkers);
+  useEffect(() => {
+    computeMarkersRef.current = computeMarkers;
+  });
+
+  const triggerCaretRef = useRef(triggerCaretUpdate);
+  useEffect(() => {
+    triggerCaretRef.current = triggerCaretUpdate;
+  });
+
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver(() => {
-      computeMarkers();
-      triggerCaretUpdate('type');
+      computeMarkersRef.current();
+      triggerCaretRef.current('type');
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [computeMarkers, triggerCaretUpdate]);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      computeMarkers();
-      triggerCaretUpdate('big');
+      computeMarkersRef.current();
+      triggerCaretRef.current('big');
     }, 240);
     return () => clearTimeout(timer);
-  }, [isSidebarOpen, computeMarkers, triggerCaretUpdate]);
+  }, [isSidebarOpen]);
 
   useEffect(() => {
     return () => {
@@ -336,17 +346,17 @@ export default function Editor({
         setHoveredData(null);
       } else if (document.activeElement !== editorRef.current && editorRef.current.innerText !== content) {
         editorRef.current.innerText = content || '';
-        triggerCaretUpdate('big');
+        triggerCaretRef.current('big');
       }
     }
-  }, [docId, content, triggerCaretUpdate]);
+  }, [docId, content]);
 
   useEffect(() => {
     const handleSelectionChange = () => {
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
       if (editorRef.current.contains(sel.anchorNode)) {
-        triggerCaretUpdate('type');
+        triggerCaretRef.current('type');
       }
     };
 
@@ -354,13 +364,13 @@ export default function Editor({
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [triggerCaretUpdate]);
+  }, []);
 
   useEffect(() => {
     const scrollContainer = containerRef.current?.closest('.editor-pane') || window;
     const handleScrollOrResize = () => {
-      triggerCaretUpdate('type');
-      computeMarkers();
+      triggerCaretRef.current('type');
+      computeMarkersRef.current();
       setHoveredData(null);
     };
 
@@ -371,7 +381,7 @@ export default function Editor({
       scrollContainer.removeEventListener('scroll', handleScrollOrResize);
       window.removeEventListener('resize', handleScrollOrResize);
     };
-  }, [triggerCaretUpdate, computeMarkers]);
+  }, []);
 
   const handleMouseMove = (e) => {
     if (!harperIssues || harperIssues.length === 0 || !editorRef.current || !containerRef.current) {
