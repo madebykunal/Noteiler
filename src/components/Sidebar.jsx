@@ -27,7 +27,7 @@ export default function Sidebar({
   onDeleteDoc
 }) {
   const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
-  const shortcutLabel = isMac ? '⌘N' : 'Ctrl+N';
+  const modifier = isMac ? '⌘' : 'Ctrl';
 
   return (
     <aside className={`sidebar-drawer ${isOpen ? 'open' : 'closed'}`} aria-label="Notes sidebar">
@@ -37,13 +37,16 @@ export default function Sidebar({
             type="button"
             className="sidebar-new-note-btn"
             onClick={onNewChat}
-            title={`New Note (${shortcutLabel})`}
+            title={`New Note (${modifier} N)`}
           >
             <div className="new-note-btn-left">
               <PlusIcon />
               <span>New Note</span>
             </div>
-            <kbd className="sidebar-shortcut-kbd">{shortcutLabel}</kbd>
+            <kbd className="sidebar-shortcut-kbd">
+              <span className="kbd-mod">{modifier}</span>
+              <span className="kbd-key">N</span>
+            </kbd>
           </button>
         </div>
 
