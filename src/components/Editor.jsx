@@ -2,6 +2,9 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { countWords } from '../utils/stats';
 
 export default function Editor({
+  docId,
+  title = '',
+  onTitleChange,
   content,
   onChange,
   onSelectionChange
@@ -18,7 +21,7 @@ export default function Editor({
   const prevPosRef = useRef(null);
   const idleTimerRef = useRef(null);
   const rafRef = useRef(null);
-  const hasInitializedRef = useRef(false);
+  const currentDocIdRef = useRef(docId);
 
   const resetIdle = useCallback(() => {
     setIsIdle(false);
@@ -165,20 +168,17 @@ export default function Editor({
   }, []);
 
   useEffect(() => {
-    if (editorRef.current && !hasInitializedRef.current) {
-      editorRef.current.innerText = content || '';
-      hasInitializedRef.current = true;
-    }
-  }, [content]);
-
-  useEffect(() => {
-    if (editorRef.current && hasInitializedRef.current) {
-      if (document.activeElement !== editorRef.current && editorRef.current.innerText !== content) {
+    if (editorRef.current) {
+      if (currentDocIdRef.current !== docId) {
+        currentDocIdRef.current = docId;
+        editorRef.current.innerText = content || '';
+        setIsVisible(false);
+      } else if (document.activeElement !== editorRef.current && editorRef.current.innerText !== content) {
         editorRef.current.innerText = content || '';
         triggerCaretUpdate('big');
       }
     }
-  }, [content, triggerCaretUpdate]);
+  }, [docId, content, triggerCaretUpdate]);
 
   useEffect(() => {
     const handleSelectionChange = () => {
@@ -279,6 +279,17 @@ export default function Editor({
 
   return (
     <div className="editor-container" ref={containerRef} onClick={handleContainerClick}>
+      <input
+        type="text"
+        className="document-title-input"
+        value={title || ''}
+        onChange={(e) => onTitleChange && onTitleChange(e.target.value)}
+        onFocus={() => setIsVisible(false)}
+        placeholder="Untitled"
+        aria-label="Document Title"
+        spellCheck="false"
+      />
+
       <div 
         className={`custom-caret ${isIdle ? 'caret-idle' : ''} ${!isVisible ? 'caret-hidden' : ''}`}
         style={{
