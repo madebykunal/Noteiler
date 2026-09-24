@@ -1,13 +1,64 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { countWords } from '../utils/stats';
 
+function getRangeForOffsets(root, start, end) {
+  try {
+    const range = document.createRange();
+    let currentPos = 0;
+    let startSet = false;
+    let endSet = false;
+
+    function walk(node) {
+      if (endSet) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const len = node.nodeValue.length;
+        if (!startSet && currentPos + len >= start) {
+          range.setStart(node, Math.max(0, start - currentPos));
+          startSet = true;
+        }
+        if (startSet && currentPos + len >= end) {
+          range.setEnd(node, Math.min(len, end - currentPos));
+          endSet = true;
+          return;
+        }
+        currentPos += len;
+      } else if (node.nodeName === 'BR') {
+        if (!startSet && currentPos >= start) {
+          range.setStartBefore(node);
+          startSet = true;
+        }
+        if (startSet && currentPos >= end) {
+          range.setEndBefore(node);
+          endSet = true;
+          return;
+        }
+        currentPos += 1;
+      } else {
+        const children = node.childNodes;
+        for (let i = 0; i < children.length; i++) {
+          walk(children[i]);
+          if (endSet) return;
+        }
+      }
+    }
+
+    walk(root);
+    if (startSet && endSet) {
+      return range;
+    }
+  } catch {}
+  return null;
+}
+
 export default function Editor({
   docId,
   title = '',
   onTitleChange,
   content,
   onChange,
-  onSelectionChange
+  onSelectionChange,
+  harperIssues = [],
+  onApplyHarperSuggestion
 }) {
   const editorRef = useRef(null);
   const containerRef = useRef(null);
@@ -18,10 +69,15 @@ export default function Editor({
   const [isIdle, setIsIdle] = useState(false);
   const [transitionDuration, setTransitionDuration] = useState(100);
 
+  const [markers, setMarkers] = useState([]);
+  const [hoveredData, setHoveredData] = useState(null);
+
   const prevPosRef = useRef(null);
   const idleTimerRef = useRef(null);
   const rafRef = useRef(null);
   const currentDocIdRef = useRef(docId);
+  const hoverTimeoutRef = useRef(null);
+  const isOverTooltipRef = useRef(false);
 
   const resetIdle = useCallback(() => {
     setIsIdle(false);
@@ -154,6 +210,42 @@ export default function Editor({
     });
   }, [resetIdle]);
 
+  const computeMarkers = useCallback(() => {
+    if (!editorRef.current || !containerRef.current || !harperIssues || harperIssues.length === 0) {
+      setMarkers([]);
+      return;
+    }
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const list = [];
+
+    for (const issue of harperIssues) {
+      const range = getRangeForOffsets(editorRef.current, issue.start, issue.end);
+      if (!range) continue;
+
+      const rects = range.getClientRects();
+      for (let i = 0; i < rects.length; i++) {
+        const r = rects[i];
+        if (r.width === 0 || r.height === 0) continue;
+        list.push({
+          id: `${issue.id}-${i}`,
+          issue,
+          x: r.left - containerRect.left,
+          y: r.top - containerRect.top,
+          width: r.width,
+          height: r.height,
+          viewportRect: r
+        });
+      }
+    }
+
+    setMarkers(list);
+  }, [harperIssues]);
+
+  useEffect(() => {
+    computeMarkers();
+  }, [computeMarkers, content]);
+
   useEffect(() => {
     return () => {
       if (rafRef.current) {
@@ -164,6 +256,9 @@ export default function Editor({
         clearTimeout(idleTimerRef.current);
         idleTimerRef.current = null;
       }
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -173,6 +268,7 @@ export default function Editor({
         currentDocIdRef.current = docId;
         editorRef.current.innerText = content || '';
         setIsVisible(false);
+        setHoveredData(null);
       } else if (document.activeElement !== editorRef.current && editorRef.current.innerText !== content) {
         editorRef.current.innerText = content || '';
         triggerCaretUpdate('big');
@@ -199,6 +295,8 @@ export default function Editor({
     const scrollContainer = containerRef.current?.closest('.editor-pane') || window;
     const handleScrollOrResize = () => {
       triggerCaretUpdate('type');
+      computeMarkers();
+      setHoveredData(null);
     };
 
     scrollContainer.addEventListener('scroll', handleScrollOrResize, { passive: true });
@@ -208,10 +306,63 @@ export default function Editor({
       scrollContainer.removeEventListener('scroll', handleScrollOrResize);
       window.removeEventListener('resize', handleScrollOrResize);
     };
-  }, [triggerCaretUpdate]);
+  }, [triggerCaretUpdate, computeMarkers]);
+
+  const handleMouseMove = (e) => {
+    if (!markers.length) {
+      if (hoveredData && !isOverTooltipRef.current) {
+        setHoveredData(null);
+      }
+      return;
+    }
+
+    const mouseX = e.clientX;
+    const mouseY = e.clientY;
+
+    const hit = markers.find(
+      (m) =>
+        mouseX >= m.viewportRect.left - 2 &&
+        mouseX <= m.viewportRect.right + 2 &&
+        mouseY >= m.viewportRect.top - 2 &&
+        mouseY <= m.viewportRect.bottom + 6
+    );
+
+    if (hit) {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
+      }
+      setHoveredData({
+        issue: hit.issue,
+        x: hit.x,
+        y: hit.y + hit.height,
+        width: hit.width
+      });
+    } else if (!isOverTooltipRef.current) {
+      if (!hoverTimeoutRef.current) {
+        hoverTimeoutRef.current = setTimeout(() => {
+          if (!isOverTooltipRef.current) {
+            setHoveredData(null);
+          }
+          hoverTimeoutRef.current = null;
+        }, 180);
+      }
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (!isOverTooltipRef.current) {
+      hoverTimeoutRef.current = setTimeout(() => {
+        if (!isOverTooltipRef.current) {
+          setHoveredData(null);
+        }
+      }, 180);
+    }
+  };
 
   const handleKeyDown = (e) => {
     resetIdle();
+    setHoveredData(null);
 
     if (e.key === 'Tab') {
       e.preventDefault();
@@ -231,6 +382,7 @@ export default function Editor({
   };
 
   const handleInput = (e) => {
+    setHoveredData(null);
     if (onChange) {
       onChange(e.currentTarget.innerText);
     }
@@ -238,6 +390,7 @@ export default function Editor({
   };
 
   const handlePaste = (e) => {
+    setHoveredData(null);
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
@@ -278,17 +431,91 @@ export default function Editor({
   };
 
   return (
-    <div className="editor-container" ref={containerRef} onClick={handleContainerClick}>
+    <div
+      className="editor-container"
+      ref={containerRef}
+      onClick={handleContainerClick}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
       <input
         type="text"
         className="document-title-input"
         value={title || ''}
         onChange={(e) => onTitleChange && onTitleChange(e.target.value)}
-        onFocus={() => setIsVisible(false)}
+        onFocus={() => {
+          setIsVisible(false);
+          setHoveredData(null);
+        }}
         placeholder="Untitled"
         aria-label="Document Title"
         spellCheck="false"
       />
+
+      <div className="harper-markers-layer" aria-hidden="true">
+        {markers.map((marker) => (
+          <span
+            key={marker.id}
+            className={`harper-underline-wavy kind-${marker.issue.kind.toLowerCase()}`}
+            style={{
+              left: `${marker.x}px`,
+              top: `${marker.y}px`,
+              width: `${marker.width}px`,
+              height: `${marker.height}px`
+            }}
+          />
+        ))}
+      </div>
+
+      {hoveredData && (
+        <div
+          className="harper-word-tooltip"
+          style={{
+            left: `${hoveredData.x}px`,
+            top: `${hoveredData.y + 4}px`
+          }}
+          onMouseEnter={() => {
+            isOverTooltipRef.current = true;
+            if (hoverTimeoutRef.current) {
+              clearTimeout(hoverTimeoutRef.current);
+              hoverTimeoutRef.current = null;
+            }
+          }}
+          onMouseLeave={() => {
+            isOverTooltipRef.current = false;
+            setHoveredData(null);
+          }}
+        >
+          <div className="harper-tooltip-header">
+            <span className="harper-tooltip-word">"{hoveredData.issue.problemText}"</span>
+            <span className="harper-tooltip-kind">{hoveredData.issue.kind}</span>
+          </div>
+
+          {hoveredData.issue.suggestions && hoveredData.issue.suggestions.length > 0 ? (
+            <div className="harper-tooltip-suggestions">
+              {hoveredData.issue.suggestions.slice(0, 3).map((suggestion, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  className="harper-tooltip-chip"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onApplyHarperSuggestion) {
+                      onApplyHarperSuggestion(hoveredData.issue, suggestion);
+                    }
+                    setHoveredData(null);
+                    isOverTooltipRef.current = false;
+                  }}
+                >
+                  {suggestion === '' ? '(remove)' : suggestion}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="harper-tooltip-message">{hoveredData.issue.message}</span>
+          )}
+        </div>
+      )}
 
       <div 
         className={`custom-caret ${isIdle ? 'caret-idle' : ''} ${!isVisible ? 'caret-hidden' : ''}`}
@@ -309,7 +536,7 @@ export default function Editor({
         contentEditable="plaintext-only"
         suppressContentEditableWarning={true}
         data-placeholder="Start typing..."
-        spellCheck="true"
+        spellCheck="false"
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onKeyUp={() => triggerCaretUpdate('type')}

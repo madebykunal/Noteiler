@@ -64,7 +64,6 @@ export default function App() {
   const [toast, setToast] = useState(null);
 
   const [harperIssues, setHarperIssues] = useState([]);
-  const [isCheckingHarper, setIsCheckingHarper] = useState(false);
 
   const toastTimerRef = useRef(null);
   const docsRef = useRef(docs);
@@ -163,7 +162,7 @@ export default function App() {
     };
     setDocs((prev) => [newDoc, ...prev]);
     setActiveDocId(newDoc.id);
-    showToast('Created new chat');
+    showToast('New Note (⌘N)');
   }, [showToast]);
 
   const handleDeleteDoc = useCallback((docIdToDelete) => {
@@ -185,8 +184,20 @@ export default function App() {
       }
       return filtered;
     });
-    showToast('Deleted chat');
+    showToast('Deleted note');
   }, [activeDocId, showToast]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        handleNewChat();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [handleNewChat]);
 
   useEffect(() => {
     if (harperTimerRef.current) {
@@ -197,20 +208,16 @@ export default function App() {
       const currentText = activeDoc.content;
       if (!currentText || !currentText.trim()) {
         setHarperIssues([]);
-        setIsCheckingHarper(false);
         return;
       }
 
-      setIsCheckingHarper(true);
       try {
         const issues = await lintText(currentText);
         setHarperIssues(issues);
       } catch {
         setHarperIssues([]);
-      } finally {
-        setIsCheckingHarper(false);
       }
-    }, 600);
+    }, 500);
 
     return () => {
       if (harperTimerRef.current) {
@@ -281,9 +288,6 @@ export default function App() {
         selectedWords={selectedWords}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
-        harperIssues={harperIssues}
-        isCheckingHarper={isCheckingHarper}
-        onApplyHarperSuggestion={handleApplyHarperSuggestion}
         onDownloadMarkdown={handleDownloadMarkdown}
         onDownloadPDF={handleDownloadPDF}
         onDownloadText={handleDownloadText}
@@ -310,6 +314,8 @@ export default function App() {
               content={activeDoc.content}
               onChange={handleContentChange}
               onSelectionChange={setSelectedWords}
+              harperIssues={harperIssues}
+              onApplyHarperSuggestion={handleApplyHarperSuggestion}
             />
           </section>
         </main>
