@@ -22,7 +22,7 @@ function Header({
   isExportingPDF
 }) {
   return (
-    <header className="app-header">
+    <header className={`app-header ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
       <div className="header-left">
         <button
           type="button"
@@ -34,6 +34,20 @@ function Header({
         >
           <SidebarIcon />
         </button>
+      </div>
+
+      <div className="header-right">
+        <div className="header-stats">
+          {selectedWords > 0 && (
+            <span className="header-selected-count">
+              ({selectedWords} {selectedWords === 1 ? 'word is selected' : 'words are selected'})
+            </span>
+          )}
+
+          <span className="header-word-count">
+            {words} {words === 1 ? 'word' : 'words'}
+          </span>
+        </div>
 
         <DownloadMenu 
           onDownloadMarkdown={onDownloadMarkdown}
@@ -42,18 +56,6 @@ function Header({
           onCopyClipboard={onCopyClipboard}
           isExportingPDF={isExportingPDF}
         />
-      </div>
-
-      <div className="header-right">
-        {selectedWords > 0 && (
-          <span className="header-selected-count">
-            ({selectedWords} {selectedWords === 1 ? 'word is selected' : 'words are selected'})
-          </span>
-        )}
-
-        <span className="header-word-count">
-          {words} {words === 1 ? 'word' : 'words'}
-        </span>
       </div>
     </header>
   );

@@ -12,14 +12,25 @@
 .app-header {
   height: var(--nav-height);
   min-height: var(--nav-height);
-  background-color: var(--bg-nav);
-  border-bottom: 1px solid var(--border-nav);
+  background-color: var(--bg-page);
+  border-bottom: 1px solid transparent;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 20px 0 16px;
   z-index: 50;
   flex-shrink: 0;
+  transition: background-color 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.app-header.sidebar-open {
+  background-color: var(--bg-nav);
+  border-bottom-color: var(--border-nav);
+}
+
+.app-header.sidebar-closed {
+  background-color: var(--bg-page);
+  border-bottom-color: transparent;
 }
 
 .header-left {
@@ -34,30 +45,43 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background-color: #2b2b2e;
-  color: #b5b5b5;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 .sidebar-toggle-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.sidebar-toggle-btn.active,
+.app-header.sidebar-open .sidebar-toggle-btn {
+  background-color: #2b2b2e;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #ededed;
+}
+
+.app-header.sidebar-open .sidebar-toggle-btn:hover {
   background-color: #353539;
   border-color: rgba(255, 255, 255, 0.18);
   color: #ffffff;
 }
 
-.sidebar-toggle-btn.active {
-  background-color: #38383d;
-  color: var(--caret-cyan);
-  border-color: rgba(0, 210, 255, 0.3);
-}
-
 .header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
+}
+
+.header-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .header-selected-count {
@@ -141,7 +165,7 @@
 .download-dropdown {
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
   width: 170px;
   background-color: var(--bg-dropdown);
   border: 1px solid var(--border-nav);
