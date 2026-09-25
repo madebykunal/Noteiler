@@ -52,9 +52,7 @@ export async function copyToClipboard(content) {
   return successful;
 }
 
-export async function exportAsPDF(rawText, filename = 'implementation.pdf') {
-  const finalFilename = sanitizeFilename(filename, 'implementation', 'pdf');
-
+async function exportWithCanvas(rawText, finalFilename) {
   const [{ jsPDF }, { default: html2canvas }] = await Promise.all([
     import('jspdf'),
     import('html2canvas')
@@ -127,6 +125,62 @@ export async function exportAsPDF(rawText, filename = 'implementation.pdf') {
       canvas.width = 0;
       canvas.height = 0;
     }
+  }
+}
+
+export async function exportAsPDF(rawText, filename = 'implementation.pdf') {
+  const finalFilename = sanitizeFilename(filename, 'implementation', 'pdf');
+
+  try {
+    const { jsPDF } = await import('jspdf');
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'pt',
+      format: 'a4'
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 54;
+    const maxLineWidth = pageWidth - margin * 2;
+    const fontSize = 11;
+    const lineHeight = 18;
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(fontSize);
+    pdf.setTextColor(31, 41, 55);
+
+    const lines = (rawText || '').split(/\r?\n/);
+    let y = margin + fontSize;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line === '') {
+        y += lineHeight;
+        if (y > pageHeight - margin) {
+          pdf.addPage();
+          y = margin + fontSize;
+        }
+        continue;
+      }
+
+      const wrappedLines = pdf.splitTextToSize(line, maxLineWidth);
+      for (let j = 0; j < wrappedLines.length; j++) {
+        if (y > pageHeight - margin) {
+          pdf.addPage();
+          y = margin + fontSize;
+        }
+        pdf.text(wrappedLines[j], margin, y);
+        y += lineHeight;
+      }
+    }
+
+    pdf.save(finalFilename);
+    return finalFilename;
+  } catch (err) {
+    console.warn('Direct jsPDF export failed, falling back to canvas pipeline:', err);
+    return exportWithCanvas(rawText, finalFilename);
   }
 }
 
