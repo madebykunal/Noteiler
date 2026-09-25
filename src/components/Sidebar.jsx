@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 
 function PlusIcon() {
   return (
@@ -18,7 +18,29 @@ function TrashIcon() {
   );
 }
 
-export default function Sidebar({
+function areSidebarPropsEqual(prevProps, nextProps) {
+  if (prevProps.isOpen !== nextProps.isOpen) return false;
+  if (prevProps.activeDocId !== nextProps.activeDocId) return false;
+  if (prevProps.onSelectDoc !== nextProps.onSelectDoc) return false;
+  if (prevProps.onNewChat !== nextProps.onNewChat) return false;
+  if (prevProps.onDeleteDoc !== nextProps.onDeleteDoc) return false;
+
+  const prevDocs = prevProps.docs || [];
+  const nextDocs = nextProps.docs || [];
+  if (prevDocs.length !== nextDocs.length) return false;
+
+  for (let i = 0; i < prevDocs.length; i++) {
+    const p = prevDocs[i];
+    const n = nextDocs[i];
+    if (p.id !== n.id || p.title !== n.title) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function Sidebar({
   isOpen,
   docs = [],
   activeDocId,
@@ -88,3 +110,5 @@ export default function Sidebar({
     </aside>
   );
 }
+
+export default memo(Sidebar, areSidebarPropsEqual);

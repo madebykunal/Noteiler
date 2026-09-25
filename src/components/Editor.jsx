@@ -126,6 +126,11 @@ export default function Editor({
   const hoverTimeoutRef = useRef(null);
   const isOverTooltipRef = useRef(false);
 
+  const layoutRefreshTimerRef = useRef(null);
+  const contentSyncTimerRef = useRef(null);
+  const hoverRafRef = useRef(null);
+  const lastMousePosRef = useRef({ x: 0, y: 0 });
+
   const resetIdle = useCallback(() => {
     setIsIdle(false);
     if (idleTimerRef.current) {
@@ -280,8 +285,7 @@ export default function Editor({
           x: r.left - containerRect.left,
           y: r.top - containerRect.top,
           width: r.width,
-          height: r.height,
-          viewportRect: r
+          height: r.height
         });
       }
     }
@@ -291,7 +295,7 @@ export default function Editor({
 
   useEffect(() => {
     computeMarkers();
-  }, [computeMarkers, content]);
+  }, [computeMarkers]);
 
   const computeMarkersRef = useRef(computeMarkers);
   useEffect(() => {
@@ -303,23 +307,56 @@ export default function Editor({
     triggerCaretRef.current = triggerCaretUpdate;
   });
 
+  const scheduleLayoutRefresh = useCallback(() => {
+    if (layoutRefreshTimerRef.current) {
+      clearTimeout(layoutRefreshTimerRef.current);
+    }
+    layoutRefreshTimerRef.current = setTimeout(() => {
+      layoutRefreshTimerRef.current = null;
+      computeMarkersRef.current();
+      triggerCaretRef.current('big');
+    }, 100);
+  }, []);
+
+  const flushContentSync = useCallback(() => {
+    if (contentSyncTimerRef.current) {
+      clearTimeout(contentSyncTimerRef.current);
+      contentSyncTimerRef.current = null;
+      if (editorRef.current && onChange) {
+        onChange(editorRef.current.innerText);
+      }
+    }
+  }, [onChange]);
+
+  const scheduleContentSync = useCallback(() => {
+    if (contentSyncTimerRef.current) {
+      clearTimeout(contentSyncTimerRef.current);
+    }
+    contentSyncTimerRef.current = setTimeout(() => {
+      contentSyncTimerRef.current = null;
+      if (editorRef.current && onChange) {
+        onChange(editorRef.current.innerText);
+      }
+    }, 75);
+  }, [onChange]);
+
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver(() => {
-      computeMarkersRef.current();
-      triggerCaretRef.current('type');
+      scheduleLayoutRefresh();
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [scheduleLayoutRefresh]);
 
   useEffect(() => {
+    scheduleLayoutRefresh();
     const timer = setTimeout(() => {
       computeMarkersRef.current();
       triggerCaretRef.current('big');
     }, 240);
     return () => clearTimeout(timer);
-  }, [isSidebarOpen]);
+  }, [isSidebarOpen, scheduleLayoutRefresh]);
 
   useEffect(() => {
     return () => {
@@ -327,19 +364,47 @@ export default function Editor({
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      if (hoverRafRef.current) {
+        cancelAnimationFrame(hoverRafRef.current);
+        hoverRafRef.current = null;
+      }
       if (idleTimerRef.current) {
         clearTimeout(idleTimerRef.current);
         idleTimerRef.current = null;
       }
       if (hoverTimeoutRef.current) {
         clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
+      }
+      if (layoutRefreshTimerRef.current) {
+        clearTimeout(layoutRefreshTimerRef.current);
+        layoutRefreshTimerRef.current = null;
+      }
+      if (contentSyncTimerRef.current) {
+        clearTimeout(contentSyncTimerRef.current);
+        contentSyncTimerRef.current = null;
       }
     };
   }, []);
 
   useEffect(() => {
+    const handleFlush = () => {
+      flushContentSync();
+    };
+    window.addEventListener('beforeunload', handleFlush);
+    window.addEventListener('pagehide', handleFlush);
+    document.addEventListener('visibilitychange', handleFlush);
+    return () => {
+      window.removeEventListener('beforeunload', handleFlush);
+      window.removeEventListener('pagehide', handleFlush);
+      document.removeEventListener('visibilitychange', handleFlush);
+    };
+  }, [flushContentSync]);
+
+  useEffect(() => {
     if (editorRef.current) {
       if (currentDocIdRef.current !== docId) {
+        flushContentSync();
         currentDocIdRef.current = docId;
         editorRef.current.innerText = content || '';
         setIsVisible(false);
@@ -349,7 +414,7 @@ export default function Editor({
         triggerCaretRef.current('big');
       }
     }
-  }, [docId, content]);
+  }, [docId, content, flushContentSync]);
 
   useEffect(() => {
     const handleSelectionChange = () => {
@@ -368,22 +433,25 @@ export default function Editor({
 
   useEffect(() => {
     const scrollContainer = containerRef.current?.closest('.editor-pane') || window;
-    const handleScrollOrResize = () => {
+    const handleScroll = () => {
       triggerCaretRef.current('type');
-      computeMarkersRef.current();
       setHoveredData(null);
     };
+    const handleResize = () => {
+      setHoveredData(null);
+      scheduleLayoutRefresh();
+    };
 
-    scrollContainer.addEventListener('scroll', handleScrollOrResize, { passive: true });
-    window.addEventListener('resize', handleScrollOrResize, { passive: true });
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleResize, { passive: true });
 
     return () => {
-      scrollContainer.removeEventListener('scroll', handleScrollOrResize);
-      window.removeEventListener('resize', handleScrollOrResize);
+      scrollContainer.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [scheduleLayoutRefresh]);
 
-  const handleMouseMove = (e) => {
+  const processHoverHitTest = useCallback((mouseX, mouseY) => {
     if (!harperIssues || harperIssues.length === 0 || !editorRef.current || !containerRef.current) {
       if (hoveredData && !isOverTooltipRef.current) {
         setHoveredData(null);
@@ -391,8 +459,9 @@ export default function Editor({
       return;
     }
 
-    const mouseX = e.clientX;
-    const mouseY = e.clientY;
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const containerX = mouseX - containerRect.left;
+    const containerY = mouseY - containerRect.top;
 
     let targetIssue = null;
     let targetRange = null;
@@ -408,10 +477,10 @@ export default function Editor({
     if (!targetIssue && markers.length > 0) {
       const hit = markers.find(
         (m) =>
-          mouseX >= m.viewportRect.left - 4 &&
-          mouseX <= m.viewportRect.right + 4 &&
-          mouseY >= m.viewportRect.top - 4 &&
-          mouseY <= m.viewportRect.bottom + 6
+          containerX >= m.x - 4 &&
+          containerX <= m.x + m.width + 4 &&
+          containerY >= m.y - 4 &&
+          containerY <= m.y + m.height + 6
       );
       if (hit) {
         targetIssue = hit.issue;
@@ -426,7 +495,6 @@ export default function Editor({
       }
 
       const rect = targetRange.getBoundingClientRect();
-      const containerRect = containerRef.current.getBoundingClientRect();
 
       setHoveredData({
         issue: targetIssue,
@@ -443,6 +511,22 @@ export default function Editor({
           hoverTimeoutRef.current = null;
         }, 180);
       }
+    }
+  }, [harperIssues, hoveredData, markers]);
+
+  const handleMouseMove = (e) => {
+    if (!harperIssues || harperIssues.length === 0) {
+      if (hoveredData && !isOverTooltipRef.current) {
+        setHoveredData(null);
+      }
+      return;
+    }
+    lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+    if (!hoverRafRef.current) {
+      hoverRafRef.current = requestAnimationFrame(() => {
+        hoverRafRef.current = null;
+        processHoverHitTest(lastMousePosRef.current.x, lastMousePosRef.current.y);
+      });
     }
   };
 
@@ -463,9 +547,7 @@ export default function Editor({
     if (e.key === 'Tab') {
       e.preventDefault();
       document.execCommand('insertText', false, '  ');
-      if (onChange && editorRef.current) {
-        onChange(editorRef.current.innerText);
-      }
+      scheduleContentSync();
       triggerCaretUpdate('type');
       return;
     }
@@ -477,11 +559,9 @@ export default function Editor({
     }
   };
 
-  const handleInput = (e) => {
+  const handleInput = () => {
     setHoveredData(null);
-    if (onChange) {
-      onChange(e.currentTarget.innerText);
-    }
+    scheduleContentSync();
     triggerCaretUpdate('type');
   };
 
@@ -490,6 +570,7 @@ export default function Editor({
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
+    flushContentSync();
     if (onChange && editorRef.current) {
       onChange(editorRef.current.innerText);
     }
@@ -502,6 +583,7 @@ export default function Editor({
   };
 
   const handleBlur = () => {
+    flushContentSync();
     setIsVisible(false);
     if (idleTimerRef.current) {
       clearTimeout(idleTimerRef.current);
@@ -596,6 +678,7 @@ export default function Editor({
                   className="harper-tooltip-chip"
                   onClick={(e) => {
                     e.stopPropagation();
+                    flushContentSync();
                     if (onApplyHarperSuggestion) {
                       onApplyHarperSuggestion(hoveredData.issue, suggestion);
                     }

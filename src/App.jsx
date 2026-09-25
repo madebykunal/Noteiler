@@ -68,6 +68,7 @@ export default function App() {
   const toastTimerRef = useRef(null);
   const docsRef = useRef(docs);
   const harperTimerRef = useRef(null);
+  const harperRequestRef = useRef(0);
 
   useEffect(() => {
     docsRef.current = docs;
@@ -78,7 +79,7 @@ export default function App() {
       try {
         window.localStorage.setItem('noteiler_docs', JSON.stringify(docs));
       } catch {}
-    }, 300);
+    }, 1000);
 
     return () => clearTimeout(timer);
   }, [docs]);
@@ -96,16 +97,27 @@ export default function App() {
   }, [isSidebarOpen]);
 
   useEffect(() => {
-    const handleBeforeUnload = () => {
+    const saveImmediately = () => {
       try {
         window.localStorage.setItem('noteiler_docs', JSON.stringify(docsRef.current));
       } catch {}
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveImmediately();
+      }
+    };
+
+    window.addEventListener('beforeunload', saveImmediately);
+    window.addEventListener('pagehide', saveImmediately);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      handleBeforeUnload();
+      window.removeEventListener('beforeunload', saveImmediately);
+      window.removeEventListener('pagehide', saveImmediately);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      saveImmediately();
     };
   }, []);
 
@@ -205,19 +217,27 @@ export default function App() {
     }
 
     harperTimerRef.current = setTimeout(async () => {
+      const requestId = ++harperRequestRef.current;
       const currentText = activeDoc.content;
       if (!currentText || !currentText.trim()) {
-        setHarperIssues([]);
+        if (requestId === harperRequestRef.current) {
+          setHarperIssues([]);
+        }
         return;
       }
 
       try {
         const issues = await lintText(currentText);
+        if (requestId !== harperRequestRef.current) {
+          return;
+        }
         setHarperIssues(issues);
       } catch {
-        setHarperIssues([]);
+        if (requestId === harperRequestRef.current) {
+          setHarperIssues([]);
+        }
       }
-    }, 500);
+    }, 750);
 
     return () => {
       if (harperTimerRef.current) {
